@@ -1,0 +1,32 @@
+{
+  "name": "@mknrt/cypress-console-spy",
+  "version": "1.0.0",
+  "description": "Cypress plugin to monitor and handle console errors and warnings",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "build": "echo \"No build required\"",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "cypress",
+    "plugin",
+    "console",
+    "error",
+    "testing"
+  ],
+  "author": "mknrt",
+  "license": "MIT",
+  "peerDependencies": {
+    "cypress": "^13.17.0"
+  },
+  "files": [
+    "src/",
+    "index.js",
+    "README.md"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iamknrt/cypress-console-spy.git"
+  }
+}
