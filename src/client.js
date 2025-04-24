@@ -102,8 +102,18 @@ module.exports = (Cypress, customConfig = {}) => {
 
     // Override global `it` function to add console error checking
     const originalIt = global.it;
-    global.it = function (description, testFn) {
-        if (!testFn) return originalIt(description, testFn);
+    global.it = function (description, configOrFn, fn) {
+        // Проверяем, является ли configOrFn объектом конфигурации
+        const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
+        const testFn = isConfigObject ? fn : configOrFn;
+
+        // Если testFn отсутствует или не функция, вызываем оригинальный it
+        if (!testFn || typeof testFn !== 'function') {
+            debugLog('cypress-console-spy: testFn is not a function, skipping wrap:', testFn);
+            return isConfigObject
+                ? originalIt.call(this, description, configOrFn, testFn)
+                : originalIt.call(this, description, testFn);
+        }
 
         const wrappedTest = function () {
             // Reset spies before each test
@@ -140,12 +150,22 @@ module.exports = (Cypress, customConfig = {}) => {
             });
         };
 
-        return originalIt(description, wrappedTest);
+        return isConfigObject
+            ? originalIt.call(this, description, configOrFn, wrappedTest)
+            : originalIt.call(this, description, wrappedTest);
     };
 
-    // Handle special cases: it.only and it.skip
-    global.it.only = function (description, testFn) {
-        if (!testFn) return originalIt.only(description, testFn);
+    // Handle special cases: it.only
+    global.it.only = function (description, configOrFn, fn) {
+        const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
+        const testFn = isConfigObject ? fn : configOrFn;
+
+        if (!testFn || typeof testFn !== 'function') {
+            debugLog('cypress-console-spy: testFn is not a function, skipping wrap:', testFn);
+            return isConfigObject
+                ? originalIt.only.call(this, description, configOrFn, testFn)
+                : originalIt.only.call(this, description, testFn);
+        }
 
         const wrappedTest = function () {
             Object.values(consoleSpies).forEach((spy) => spy?.resetHistory());
@@ -176,11 +196,18 @@ module.exports = (Cypress, customConfig = {}) => {
             });
         };
 
-        return originalIt.only(description, wrappedTest);
+        return isConfigObject
+            ? originalIt.only.call(this, description, configOrFn, wrappedTest)
+            : originalIt.only.call(this, description, wrappedTest);
     };
 
-    global.it.skip = function (description, testFn) {
-        if (!testFn) return originalIt.skip(description, testFn);
-        return originalIt.skip(description, testFn);
+    // Handle special cases: it.skip
+    global.it.skip = function (description, configOrFn, fn) {
+        const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
+        const testFn = isConfigObject ? fn : configOrFn;
+
+        return isConfigObject
+            ? originalIt.skip.call(this, description, configOrFn, testFn)
+            : originalIt.skip.call(this, description, testFn);
     };
 };
