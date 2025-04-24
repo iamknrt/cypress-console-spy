@@ -1,11 +1,11 @@
-# Cypress Console Spy
+# @mknrt/cypress-console-spy
 
 A Cypress plugin to monitor and handle console errors and warnings during tests, with configurable options, whitelisting, and error statistics.
 
 ## Installation
 
 ```bash
-npm install cypress-console-spy
+npm install @mknrt/cypress-console-spy
 ```
 
 ## Setup
