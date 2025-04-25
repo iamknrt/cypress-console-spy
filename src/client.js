@@ -100,14 +100,12 @@ module.exports = (Cypress, customConfig = {}) => {
         });
     };
 
-    // Override global `it` function to add console error checking
+// Override global `it` function to add console error checking
     const originalIt = global.it;
     global.it = function (description, configOrFn, fn) {
-        // Проверяем, является ли configOrFn объектом конфигурации
         const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
         const testFn = isConfigObject ? fn : configOrFn;
 
-        // Если testFn отсутствует или не функция, вызываем оригинальный it
         if (!testFn || typeof testFn !== 'function') {
             debugLog('cypress-console-spy: testFn is not a function, skipping wrap:', testFn);
             return isConfigObject
@@ -116,19 +114,25 @@ module.exports = (Cypress, customConfig = {}) => {
         }
 
         const wrappedTest = function () {
-            // Reset spies before each test
-            Object.values(consoleSpies).forEach((spy) => spy?.resetHistory());
+            // Снять шпионы и очистить consoleSpies
+            Object.values(consoleSpies).forEach((spy) => {
+                if (spy && typeof spy.restore === 'function') {
+                    spy.restore();
+                    debugLog('Spy restored for console method');
+                }
+            });
+            Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
 
             return cy.window().then((win) => {
-                // Set up console spies
+                // Создать новые шпионы
                 config.methodsToTrack.forEach((method) => {
-                    if (win.console[method]) {
+                    if (win.console[method] && !win.console[method].__cy_spy && !consoleSpies[method]) {
                         consoleSpies[method] = cy.spy(win.console, method);
                         debugLog(`Spy created for console.${method}`);
                     }
                 });
 
-                // Handle global uncaught errors
+                // Обработчик глобальных ошибок
                 win.addEventListener('error', (event) => {
                     const errorMessage = `Uncaught Error: ${event.message} at ${event.filename}:${event.lineno}`;
                     cy.task('logConsoleError', { message: [errorMessage], type: 'error' }, { log: false });
@@ -142,11 +146,18 @@ module.exports = (Cypress, customConfig = {}) => {
                     cy.task('notifyCriticalError', { message: [errorMessage], type: 'error' }, { log: false });
                 });
 
-                // Execute the test function
                 return testFn.call(this);
             }).then(() => {
-                // Check for console errors after test execution
                 return cy.then(checkConsoleErrors);
+            }).then(() => {
+                // Очистка шпионов после теста (замена .finally())
+                Object.values(consoleSpies).forEach((spy) => {
+                    if (spy && typeof spy.restore === 'function') {
+                        spy.restore();
+                        debugLog('Spy restored after test');
+                    }
+                });
+                Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
             });
         };
 
@@ -155,7 +166,7 @@ module.exports = (Cypress, customConfig = {}) => {
             : originalIt.call(this, description, wrappedTest);
     };
 
-    // Handle special cases: it.only
+// Handle special cases: it.only
     global.it.only = function (description, configOrFn, fn) {
         const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
         const testFn = isConfigObject ? fn : configOrFn;
@@ -168,15 +179,25 @@ module.exports = (Cypress, customConfig = {}) => {
         }
 
         const wrappedTest = function () {
-            Object.values(consoleSpies).forEach((spy) => spy?.resetHistory());
+            // Снять шпионы и очистить consoleSpies
+            Object.values(consoleSpies).forEach((spy) => {
+                if (spy && typeof spy.restore === 'function') {
+                    spy.restore();
+                    debugLog('Spy restored for console method');
+                }
+            });
+            Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
+
             return cy.window().then((win) => {
+                // Создать новые шпионы
                 config.methodsToTrack.forEach((method) => {
-                    if (win.console[method]) {
+                    if (win.console[method] && !win.console[method].__cy_spy && !consoleSpies[method]) {
                         consoleSpies[method] = cy.spy(win.console, method);
                         debugLog(`Spy created for console.${method}`);
                     }
                 });
 
+                // Обработчик глобальных ошибок
                 win.addEventListener('error', (event) => {
                     const errorMessage = `Uncaught Error: ${event.message} at ${event.filename}:${event.lineno}`;
                     cy.task('logConsoleError', { message: [errorMessage], type: 'error' }, { log: false });
@@ -193,6 +214,15 @@ module.exports = (Cypress, customConfig = {}) => {
                 return testFn.call(this);
             }).then(() => {
                 return cy.then(checkConsoleErrors);
+            }).then(() => {
+                // Очистка шпионов после теста (замена .finally())
+                Object.values(consoleSpies).forEach((spy) => {
+                    if (spy && typeof spy.restore === 'function') {
+                        spy.restore();
+                        debugLog('Spy restored after test');
+                    }
+                });
+                Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
             });
         };
 
