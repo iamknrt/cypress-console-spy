@@ -10,7 +10,7 @@ Install the plugin via npm:
 npm install @mknrt/cypress-console-spy
 ```
 
-**Older versions (`1.0.0` and `1.0.1`) are deprecated; please update to the latest version.
+## Older versions (`1.0.0` and `1.0.1`) are deprecated; please update to the latest version.
 
 ## Setup
 
