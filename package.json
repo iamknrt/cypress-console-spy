@@ -18,7 +18,7 @@
   "author": "mknrt",
   "license": "MIT",
   "peerDependencies": {
-    "cypress": "^13.17.0"
+    "cypress": ">=13.17.0"
   },
   "files": [
     "src/",
