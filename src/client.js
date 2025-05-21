@@ -1,5 +1,5 @@
 const defaultConfig = {
-    stopOnError: true,
+    failOnSpy: true,
     logToFile: true,
     methodsToTrack: ['error'],
     throwOnWarning: false,
@@ -18,7 +18,7 @@ module.exports = (Cypress, customConfig = {}) => {
     }
 
     // Checks console for errors and warnings based on configuration
-    const checkConsoleErrors = () => {
+    const checkConsoleErrors = (testFailOnSpy = config.failOnSpy) => {
         const errors = [];
         const warnings = [];
 
@@ -78,7 +78,7 @@ module.exports = (Cypress, customConfig = {}) => {
 
         // Wait for all logging tasks to complete
         return cy.wrap(Promise.all(logPromises), { log: false }).then(() => {
-            if (filteredIssues.length > 0 && config.stopOnError) {
+            if (filteredIssues.length > 0 && testFailOnSpy) {
                 const errorMessage =
                     `Console errors detected (${filteredIssues.length}):\n` +
                     filteredIssues.map((issue) => `• ${issue.join(' ')}`).join('\n');
@@ -100,11 +100,12 @@ module.exports = (Cypress, customConfig = {}) => {
         });
     };
 
-// Override global `it` function to add console error checking
+    // Override global `it` function to add console error checking
     const originalIt = global.it;
     global.it = function (description, configOrFn, fn) {
         const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
         const testFn = isConfigObject ? fn : configOrFn;
+        const testConfig = isConfigObject ? configOrFn : {};
 
         if (!testFn || typeof testFn !== 'function') {
             debugLog('cypress-console-spy: testFn is not a function, skipping wrap:', testFn);
@@ -114,7 +115,7 @@ module.exports = (Cypress, customConfig = {}) => {
         }
 
         const wrappedTest = function () {
-            // Снять шпионы и очистить consoleSpies
+            // Remove existing spies and clear consoleSpies
             Object.values(consoleSpies).forEach((spy) => {
                 if (spy && typeof spy.restore === 'function') {
                     spy.restore();
@@ -124,7 +125,7 @@ module.exports = (Cypress, customConfig = {}) => {
             Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
 
             return cy.window().then((win) => {
-                // Создать новые шпионы
+                // Create new spies
                 config.methodsToTrack.forEach((method) => {
                     if (win.console[method] && !win.console[method].__cy_spy && !consoleSpies[method]) {
                         consoleSpies[method] = cy.spy(win.console, method);
@@ -132,7 +133,7 @@ module.exports = (Cypress, customConfig = {}) => {
                     }
                 });
 
-                // Обработчик глобальных ошибок
+                // Global error handler
                 win.addEventListener('error', (event) => {
                     const errorMessage = `Uncaught Error: ${event.message} at ${event.filename}:${event.lineno}`;
                     cy.task('logConsoleError', { message: [errorMessage], type: 'error' }, { log: false });
@@ -148,9 +149,9 @@ module.exports = (Cypress, customConfig = {}) => {
 
                 return testFn.call(this);
             }).then(() => {
-                return cy.then(checkConsoleErrors);
+                return cy.then(() => checkConsoleErrors(testConfig.failOnSpy));
             }).then(() => {
-                // Очистка шпионов после теста (замена .finally())
+                // Clean up spies after test
                 Object.values(consoleSpies).forEach((spy) => {
                     if (spy && typeof spy.restore === 'function') {
                         spy.restore();
@@ -166,10 +167,11 @@ module.exports = (Cypress, customConfig = {}) => {
             : originalIt.call(this, description, wrappedTest);
     };
 
-// Handle special cases: it.only
+    // Handle special cases: it.only
     global.it.only = function (description, configOrFn, fn) {
         const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
         const testFn = isConfigObject ? fn : configOrFn;
+        const testConfig = isConfigObject ? configOrFn : {};
 
         if (!testFn || typeof testFn !== 'function') {
             debugLog('cypress-console-spy: testFn is not a function, skipping wrap:', testFn);
@@ -179,7 +181,7 @@ module.exports = (Cypress, customConfig = {}) => {
         }
 
         const wrappedTest = function () {
-            // Снять шпионы и очистить consoleSpies
+            // Remove existing spies and clear consoleSpies
             Object.values(consoleSpies).forEach((spy) => {
                 if (spy && typeof spy.restore === 'function') {
                     spy.restore();
@@ -189,7 +191,7 @@ module.exports = (Cypress, customConfig = {}) => {
             Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
 
             return cy.window().then((win) => {
-                // Создать новые шпионы
+                // Create new spies
                 config.methodsToTrack.forEach((method) => {
                     if (win.console[method] && !win.console[method].__cy_spy && !consoleSpies[method]) {
                         consoleSpies[method] = cy.spy(win.console, method);
@@ -197,7 +199,7 @@ module.exports = (Cypress, customConfig = {}) => {
                     }
                 });
 
-                // Обработчик глобальных ошибок
+                // Global error handler
                 win.addEventListener('error', (event) => {
                     const errorMessage = `Uncaught Error: ${event.message} at ${event.filename}:${event.lineno}`;
                     cy.task('logConsoleError', { message: [errorMessage], type: 'error' }, { log: false });
@@ -213,9 +215,9 @@ module.exports = (Cypress, customConfig = {}) => {
 
                 return testFn.call(this);
             }).then(() => {
-                return cy.then(checkConsoleErrors);
+                return cy.then(() => checkConsoleErrors(testConfig.failOnSpy));
             }).then(() => {
-                // Очистка шпионов после теста (замена .finally())
+                // Clean up spies after test
                 Object.values(consoleSpies).forEach((spy) => {
                     if (spy && typeof spy.restore === 'function') {
                         spy.restore();
