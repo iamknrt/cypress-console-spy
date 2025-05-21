@@ -28,7 +28,7 @@ module.exports = defineConfig({
         },
         env: {
             consoleDaemon: {
-                stopOnError: true,
+                failOnSpy: true,
                 logToFile: true,
                 methodsToTrack: ['error', 'warn'],
                 throwOnWarning: false,
@@ -59,12 +59,25 @@ The plugin is built on two main files:
 
 The plugin supports the following options (via `Cypress.env('consoleDaemon')`):
 
-- `stopOnError` (boolean): Stop the test if console issues are detected (default: `true`).
+- `failOnSpy` (boolean): Stop the test if console issues are detected (default: `true`). Can be overridden for specific tests by passing `{ failOnSpy: false }` to `it()` or `it.only()`.
 - `logToFile` (boolean): Save console issues (including uncaught errors) to `[testName].log` in the `cypress/logs/` directory (default: `true`).
 - `methodsToTrack` (array): Console methods to track (e.g., `['error', 'warn', 'log']`, default: `['error']`).
-- `throwOnWarning` (boolean): Treat warnings as critical, stopping the test if `stopOnError` is `true` (default: `false`).
+- `throwOnWarning` (boolean): Treat warnings as critical, stopping the test if `failOnSpy` is `true` (default: `false`).
 - `whitelist` (array): Strings or RegExp patterns to ignore when checking console issues (default: `[]`).
 - `debug` (boolean): Enable debug logging for detailed output (default: `false`).
+
+### Test-Specific Configuration
+
+You can override the `failOnSpy` setting for individual tests by passing a configuration object to `it()` or `it.only()`. For example:
+
+```javascript
+it('should not fail on console errors', { failOnSpy: false }, () => {
+    cy.visit('https://example.com');
+    cy.window().then((win) => {
+        win.console.error('Test error'); // Won't fail the test
+    });
+});
+```
 
 ## Features
 
@@ -80,13 +93,13 @@ Here’s an example test that demonstrates console monitoring, whitelisting, and
 
 ```javascript
 describe('Test with Console Spy', () => {
-it('Checks console errors and warnings', () => {
-// Enable debug mode for this test
-cy.task('setDebugMode', true);
+    it('Checks console errors and warnings', { failOnSpy: false }, () => {
+        // Enable debug mode for this test
+        cy.task('setDebugMode', true);
 
         cy.visit('https://example.com');
         cy.window().then((win) => {
-            // This error will be caught and stop the test (if stopOnError is true)
+            // This error will be logged but won't fail the test due to failOnSpy: false
             win.console.error('Test error');
 
             // This warning will be ignored due to the whitelist
@@ -105,7 +118,7 @@ cy.task('setDebugMode', true);
 ```
 
 **Expected Behavior**:
-- The `Test error` will be logged and stop the test (if `stopOnError` is `true`).
+- The `Test error` will be logged but won't stop the test (since `failOnSpy: false`).
 - The `known warning` will be ignored due to the whitelist.
 - The uncaught error (`Uncaught test error`) will be captured, logged, and saved to a file (if `logToFile` is `true`).
 - Debug logs will be visible in the terminal if `debug` is `true`.
