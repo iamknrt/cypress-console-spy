@@ -1,16 +1,17 @@
 # @mknrt/cypress-console-spy
 
-A Cypress plugin to monitor and handle console errors, warnings, and uncaught errors during tests. It provides configurable options, whitelisting, error statistics, and logging capabilities.
+A Cypress plugin to monitor and handle console errors, warnings, and uncaught errors during tests. It offers configurable options, whitelisting, error statistics, and logging capabilities, with robust support for test-specific and suite-level configuration overrides.
 
 ## Installation
 
 Install the plugin via npm:
 
+
 ```bash
 npm install @mknrt/cypress-console-spy
 ```
 
-## Older versions (`1.0.0` and `1.0.1`) are deprecated; please update to the latest version.
+## Older versions (<1.1.0) are deprecated; please update to the latest version.
 
 ## Setup
 
@@ -50,31 +51,33 @@ client(Cypress, Cypress.env('consoleDaemon'));
 
 ## Core Files
 
-The plugin is built on two main files:
+The plugin consists of two main files:
 
-- **server.js**: Handles server-side tasks such as logging console issues, saving them to files, sending notifications, and maintaining error statistics. It defines Cypress tasks like `logConsoleError`, `saveConsoleErrorToFile`, `notifyCriticalError`, `getErrorStats`, `resetErrorStats`, and `setDebugMode`. It also manages events like `before:run` (to reset stats) and `after:run` (to display a summary of errors and warnings).
-- **client.js**: Manages client-side functionality by overriding Cypress's `it`, `it.only`, and `it.skip` functions to wrap tests. It sets up spies for specified console methods (e.g., `error`, `warn`), captures uncaught errors via a global error handler, filters issues based on a whitelist, checks for console issues after each test, and triggers server-side tasks for logging and notifications.
+- **server.js**: Manages server-side tasks, including logging console issues, saving them to files, sending notifications, and tracking error statistics. It defines Cypress tasks like `logConsoleError`, `saveConsoleErrorToFile`, `notifyCriticalError`, `getErrorStats`, `resetErrorStats`, and `setDebugMode`. It also handles events like `before:run` (to reset stats) and `after:run` (to display a summary of errors and warnings).
+- **client.js**: Handles client-side functionality by overriding Cypress's `describe`, `it`, `it.only`, and `it.skip` functions to wrap tests and suites. It sets up spies for specified console methods (e.g., `error`, `warn`), captures uncaught errors via a global error handler, filters issues based on a whitelist, checks for console issues after each test, and triggers server-side tasks for logging and notifications.
 
 ## Configuration
 
-The plugin supports the following options (via `Cypress.env('consoleDaemon')`):
+The plugin supports the following options, configurable via `Cypress.env('consoleDaemon')`:
 
-- `failOnSpy` (boolean): Stop the test if console issues are detected (default: `true`). Can be overridden for specific tests by passing `{ failOnSpy: false }` to `it()` or `it.only()`.
-- `logToFile` (boolean): Save console issues (including uncaught errors) to `[testName].log` in the `cypress/logs/` directory (default: `true`).
-- `methodsToTrack` (array): Console methods to track (e.g., `['error', 'warn', 'log']`, default: `['error']`).
-- `throwOnWarning` (boolean): Treat warnings as critical, stopping the test if `failOnSpy` is `true` (default: `false`).
+- `failOnSpy` (boolean): Fails the test if console issues are detected (default: `true`). Can be overridden at the suite level with `describe('name', { failOnSpy: false }, () => {...})` or test level with `it('name', { failOnSpy: false }, () => {...})`.
+- `logToFile` (boolean): Saves console issues to `[testName].log` in the `cypress/logs/` directory (default: `true`).
+- `methodsToTrack` (array): Console methods to monitor (e.g., `['error', 'warn', 'log']`, default: `['error']`).
+- `throwOnWarning` (boolean): Treats warnings as critical, failing the test if `failOnSpy` is `true` (default: `false`).
 - `whitelist` (array): Strings or RegExp patterns to ignore when checking console issues (default: `[]`).
-- `debug` (boolean): Enable debug logging for detailed output (default: `false`).
+- `debug` (boolean): Enables detailed debug logging in the browser console (default: `false`).
 
-### Test-Specific Configuration
+### Suite and Test-Specific Configuration
 
-You can override the `failOnSpy` setting for individual tests by passing a configuration object to `it()` or `it.only()`. For example:
+You can override `failOnSpy` for entire test suites or individual tests:
 
 ```javascript
-it('should not fail on console errors', { failOnSpy: false }, () => {
-    cy.visit('https://example.com');
-    cy.window().then((win) => {
-        win.console.error('Test error'); // Won't fail the test
+describe('Suite with ignored console errors', { failOnSpy: false }, () => {
+    it('Test ignoring console errors', { failOnSpy: false }, () => {
+        cy.visit('https://example.com');
+        cy.window().then((win) => {
+            win.console.error('Test error'); // Won't fail the test
+        });
     });
 });
 ```
@@ -82,31 +85,27 @@ it('should not fail on console errors', { failOnSpy: false }, () => {
 ## Features
 
 - **Console Monitoring**: Tracks specified console methods (e.g., `error`, `warn`) during tests.
-- **Uncaught Error Handling**: Automatically captures uncaught errors (e.g., `Uncaught Error: ...`) and processes them using the same logging and notification tasks.
+- **Uncaught Error Handling**: Captures uncaught errors (e.g., `Uncaught Error: ...`) and processes them with logging and notification tasks.
 - **Whitelisting**: Ignores console messages matching specified strings or patterns.
 - **Error Statistics**: Collects and summarizes errors and warnings across test runs.
 - **Logging**: Saves issues to files in `cypress/logs/` (created automatically if the directory doesn't exist).
+- **Suite and Test Overrides**: Supports `failOnSpy` overrides at both `describe` and `it` levels for flexible configuration.
 
 ## Example Test
 
-Here’s an example test that demonstrates console monitoring, whitelisting, and debug mode:
+Here’s an example demonstrating console monitoring, whitelisting, and debug mode:
 
 ```javascript
-describe('Test with Console Spy', () => {
-    it('Checks console errors and warnings', { failOnSpy: false }, () => {
+describe('Test Suite with Console Spy', { failOnSpy: false }, () => {
+    it('Ignores console errors', { failOnSpy: false }, () => {
         // Enable debug mode for this test
         cy.task('setDebugMode', true);
 
         cy.visit('https://example.com');
         cy.window().then((win) => {
-            // This error will be logged but won't fail the test due to failOnSpy: false
-            win.console.error('Test error');
-
-            // This warning will be ignored due to the whitelist
-            win.console.warn('known warning');
-
-            // This will trigger an uncaught error
-            throw new Error('Uncaught test error');
+            win.console.error('Test error'); // Won't fail due to failOnSpy: false
+            win.console.warn('known warning'); // Ignored due to whitelist
+            throw new Error('Uncaught test error'); // Captured and logged
         });
 
         // Check error statistics
@@ -118,21 +117,54 @@ describe('Test with Console Spy', () => {
 ```
 
 **Expected Behavior**:
-- The `Test error` will be logged but won't stop the test (since `failOnSpy: false`).
-- The `known warning` will be ignored due to the whitelist.
-- The uncaught error (`Uncaught test error`) will be captured, logged, and saved to a file (if `logToFile` is `true`).
-- Debug logs will be visible in the terminal if `debug` is `true`.
+- `Test error` is logged but doesn’t fail the test.
+- `known warning` is ignored due to the whitelist.
+- `Uncaught test error` is captured, logged, and saved to a file (if `logToFile: true`).
+- Debug logs appear in the browser console if `debug: true`.
+
+## Debug Logging
+
+To troubleshoot issues, set `debug: true` in the plugin configuration or via `cy.task('setDebugMode', true)`. Debug logs will appear in the browser console, including:
+
+- Configuration merging details (e.g., `Merged config: { default, describe, test, result }`).
+- Spy creation and collection (e.g., `Spy created for console.error`, `Collected 1 calls for error`).
+- Error checking and filtering (e.g., `All collected issues: [...]`, `Filtered issues: [...]`).
+- Failure evaluation (e.g., `Evaluating failure: filteredIssues.length=1, failOnSpy=false`).
+
+**Example Debug Log**:
+```
+Overriding describe with config: { failOnSpy: false }
+Overriding it.only with config: { failOnSpy: false }
+Merged config: { default: { failOnSpy: true, ... }, describe: { failOnSpy: false }, test: { failOnSpy: false }, result: { failOnSpy: false, ... } }
+Spy created for console.error
+Collected 1 calls for error
+All collected issues: [{ type: "error", message: ["TEST ERROR"] }]
+Filtered issues: [["TEST ERROR"]]
+Evaluating failure: filteredIssues.length=1, failOnSpy=false
+No failure thrown due to failOnSpy=false or no issues
+```
+
+Logs are saved to `cypress/logs/[testName].log` if `logToFile: true`.
 
 ## Tasks
 
 The plugin provides the following Cypress tasks:
 
-- `logConsoleError`: Logs console issues (errors, warnings) to the terminal.
-- `saveConsoleErrorToFile`: Saves issues to `[testName].log` in `cypress/logs/` (creates the directory if it doesn't exist).
-- `notifyCriticalError`: Logs critical error notifications to the terminal (used for errors and uncaught errors).
+- `logConsoleError`: Logs console issues to the terminal.
+- `saveConsoleErrorToFile`: Saves issues to `[testName].log` in `cypress/logs/`.
+- `notifyCriticalError`: Logs critical error notifications to the terminal.
 - `getErrorStats`: Returns error and warning statistics.
 - `resetErrorStats`: Resets statistics.
 - `setDebugMode`: Toggles debug logging.
+
+## Changelog
+
+### [Latest Version]
+- Fixed `failOnSpy: false` not being respected in `it.only` tests.
+- Added support for `describe` block configuration overrides.
+- Eliminated duplicate `checkConsoleErrors` calls for consistent behavior.
+- Simplified configuration merging in `client.js`.
+- Updated `readme.md` with new features, debug logging details, and clearer examples.
 
 ## Contributing
 
@@ -140,7 +172,7 @@ Contributions are welcome! Please open an issue or submit a pull request on the 
 
 ## Issues
 
-If you encounter any problems or have suggestions, please file an issue on the [GitHub repository](https://github.com/iamknrt/cypress-console-spy/issues).
+Report problems or suggest improvements on the [GitHub issues page](https://github.com/iamknrt/cypress-console-spy/issues).
 
 ## License
 
