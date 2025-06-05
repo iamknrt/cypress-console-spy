@@ -10,79 +10,137 @@ const defaultConfig = {
 module.exports = (Cypress, customConfig = {}) => {
     const config = { ...defaultConfig, ...customConfig };
     const consoleSpies = {};
+    const allIssues = [];
+    let currentTestConfig = {}; // Store test-specific config
+    let describeConfig = {}; // Store describe config
 
-    function debugLog(...args) {
-        if (config.debug) {
-            console.log(...args);
-        }
-    }
+    // Utility to log debug messages if debug mode is enabled
+    const debugLog = (...args) => {
+        if (config.debug) console.log(...args);
+    };
 
-    // Checks console for errors and warnings based on configuration
-    const checkConsoleErrors = (testFailOnSpy = config.failOnSpy) => {
-        const errors = [];
-        const warnings = [];
+    // Merges configurations from describe and test levels
+    const getMergedConfig = (testConfig) => {
+        const merged = { ...defaultConfig, ...describeConfig, ...testConfig };
+        debugLog('Merged config:', {
+            default: defaultConfig,
+            describe: describeConfig,
+            test: testConfig,
+            result: merged
+        });
+        return merged;
+    };
 
-        debugLog('Checking console spies:', Object.keys(consoleSpies));
+    // Collects calls from a spy and adds them to allIssues
+    const collectSpyCalls = (method, spy) => {
+        if (!spy?.getCalls) return;
+        const calls = spy.getCalls().map((call) => ({
+            method,
+            args: call.args,
+        }));
+        allIssues.push(...calls.map((call) => ({
+            type: method === 'error' ? 'error' : 'warn',
+            message: call.args,
+        })));
+        debugLog(`Collected ${calls.length} calls for ${method}`);
+    };
+
+    // Sets up console spies and error handlers for a given window
+    const setupConsoleSpy = (win) => {
+        // Clean up existing spies
+        Object.values(consoleSpies).forEach((spy) => {
+            if (spy?.restore) {
+                config.methodsToTrack.forEach((method) => collectSpyCalls(method, spy));
+                spy.restore();
+                debugLog('Spy restored in setupConsoleSpy');
+            }
+        });
+        Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
+
+        // Create new spies
         config.methodsToTrack.forEach((method) => {
-            const spy = consoleSpies[method];
-            if (spy?.getCalls) {
-                const calls = spy.getCalls().map((call) => call.args);
-                debugLog(`Spy calls for ${method}:`, calls);
-                if (method === 'error') {
-                    errors.push(...calls);
-                } else if (method === 'warn' && config.throwOnWarning) {
-                    warnings.push(...calls);
-                }
+            if (win.console[method] && !win.console[method].__cy_spy && !consoleSpies[method]) {
+                consoleSpies[method] = cy.spy(win.console, method);
+                debugLog(`Spy created for console.${method}`);
             }
         });
 
-        // Filter out whitelisted messages
-        const filteredIssues = [...errors, ...(config.throwOnWarning ? warnings : [])].filter(
-            (issue) => {
-                const message = issue.join(' ');
-                return !config.whitelist.some((pattern) =>
-                    typeof pattern === 'string'
-                        ? message.includes(pattern)
-                        : pattern.test(message)
+        // Add global error handler
+        win.addEventListener('error', (event) => {
+            const errorMessage = `Uncaught Error: ${event.message} at ${event.filename}:${event.lineno}`;
+            allIssues.push({ type: 'error', message: [errorMessage] });
+            cy.task('logConsoleError', { message: [errorMessage], type: 'error' }, { log: false });
+            if (config.logToFile) {
+                cy.task(
+                    'saveConsoleErrorToFile',
+                    { message: [errorMessage], type: 'error', testPath: Cypress.spec.relative },
+                    { log: false }
                 );
             }
-        );
+            cy.task('notifyCriticalError', { message: [errorMessage], type: 'error' }, { log: false });
+        });
+    };
 
-        debugLog('Filtered issues:', filteredIssues);
-
-        // Process all logging tasks first
-        const logPromises = filteredIssues.map((issue) => {
-            const type = errors.includes(issue) ? 'error' : 'warn';
-            return cy.task('logConsoleError', { message: issue, type }, { log: false }).then(() => {
+    // Processes and logs issues (errors/warnings)
+    const processIssues = (issues) => {
+        const logPromises = issues.map((issue) => {
+            const type = issue.type;
+            const message = issue.message;
+            return cy.task('logConsoleError', { message, type }, { log: false }).then(() => {
                 if (config.logToFile) {
-                    debugLog('Cypress.spec:', Cypress.spec);
-                    // Handle incorrect path for sample test
                     const testPath = Cypress.spec.relative.includes('sample.cy.js')
                         ? 'cypress/e2e/tests/sample.cy.js'
                         : Cypress.spec.relative;
-                    debugLog('Calling saveConsoleErrorToFile with:', { message: issue, type, testPath });
+                    debugLog('Cypress.spec:', Cypress.spec);
+                    debugLog('Calling saveConsoleErrorToFile with:', { message, type, testPath });
                     return cy.task(
                         'saveConsoleErrorToFile',
-                        { message: issue, type, testPath },
+                        { message, type, testPath },
                         { log: false }
                     );
                 }
-                return null;
             }).then(() => {
                 if (type === 'error') {
-                    return cy.task('notifyCriticalError', { message: issue, type }, { log: false });
+                    return cy.task('notifyCriticalError', { message, type }, { log: false });
                 }
-                return null;
             });
         });
+        return cy.wrap(Promise.all(logPromises), { log: false });
+    };
 
-        // Wait for all logging tasks to complete
-        return cy.wrap(Promise.all(logPromises), { log: false }).then(() => {
-            if (filteredIssues.length > 0 && testFailOnSpy) {
+    // Checks console for errors and warnings, failing the test if needed
+    const checkConsoleErrors = () => {
+        const mergedConfig = getMergedConfig(currentTestConfig);
+        debugLog('Checking console errors with merged config:', mergedConfig);
+        // Collect remaining calls from current spies
+        config.methodsToTrack.forEach((method) => collectSpyCalls(method, consoleSpies[method]));
+        debugLog('All collected issues:', allIssues);
+
+        // Filter errors and warnings
+        const errors = allIssues.filter((issue) => issue.type === 'error').map((issue) => issue.message);
+        const warnings = allIssues.filter((issue) => issue.type === 'warn').map((issue) => issue.message);
+
+        // Filter out whitelisted messages
+        const filteredIssues = [...errors, ...(mergedConfig.throwOnWarning ? warnings : [])].filter(
+            (issue) => {
+                const message = issue.join(' ');
+                return !mergedConfig.whitelist.some((pattern) =>
+                    typeof pattern === 'string' ? message.includes(pattern) : pattern.test(message)
+                );
+            }
+        );
+        debugLog('Filtered issues:', filteredIssues);
+
+        // Process logging tasks
+        return processIssues(filteredIssues.map((issue) => ({
+            type: errors.includes(issue) ? 'error' : 'warn',
+            message: issue,
+        }))).then(() => {
+            debugLog(`Evaluating failure: filteredIssues.length=${filteredIssues.length}, failOnSpy=${mergedConfig.failOnSpy}`);
+            if (filteredIssues.length > 0 && mergedConfig.failOnSpy) {
                 const errorMessage =
                     `Console errors detected (${filteredIssues.length}):\n` +
                     filteredIssues.map((issue) => `• ${issue.join(' ')}`).join('\n');
-
                 const consoleError = new Error(errorMessage);
                 consoleError.name = 'ConsoleErrors';
 
@@ -97,149 +155,89 @@ module.exports = (Cypress, customConfig = {}) => {
 
                 throw consoleError;
             }
+            debugLog('No failure thrown due to failOnSpy=false or no issues');
         });
     };
 
-    // Override global `it` function to add console error checking
+    // Cleans up spies and clears consoleSpies
+    const cleanupSpies = () => {
+        Object.values(consoleSpies).forEach((spy) => {
+            if (spy?.restore) {
+                spy.restore();
+                debugLog('Spy restored after test');
+            }
+        });
+        Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
+    };
+
+    // Wraps a test function to include console spying and error checking
+    const wrapTest = (testFn, testConfig) => {
+        return function () {
+            debugLog('Wrapping test with config:', testConfig);
+            currentTestConfig = testConfig; // Store test config
+            cleanupSpies();
+            allIssues.length = 0; // Reset issues at test start
+
+            return cy.window().then((win) => {
+                setupConsoleSpy(win);
+                return testFn.call(this);
+            }).then(() => cy.then(() => checkConsoleErrors()))
+                .then(cleanupSpies);
+        };
+    };
+
+    // Override global `describe` to capture config
+    const originalDescribe = global.describe;
+    global.describe = function (name, configOrFn, fn) {
+        const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
+        const describeFn = isConfigObject ? fn : configOrFn;
+        const describeConfigObj = isConfigObject ? configOrFn : {};
+
+        debugLog(`Overriding describe with config:`, describeConfigObj);
+        describeConfig = describeConfigObj; // Store describe config
+
+        return originalDescribe.call(this, name, describeFn);
+    };
+    global.describe.only = originalDescribe.only;
+    global.describe.skip = originalDescribe.skip;
+
+    // Override global `it` and `it.only`
+    const overrideIt = (originalIt, isOnly = false) => {
+        return function (description, configOrFn, fn) {
+            const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
+            const testFn = isConfigObject ? fn : configOrFn;
+            const testConfig = isConfigObject ? configOrFn : {};
+
+            debugLog(`Overriding ${isOnly ? 'it.only' : 'it'} with config:`, testConfig);
+
+            if (!testFn || typeof testFn !== 'function') {
+                debugLog('cypress-console-spy: testFn is not a function, skipping wrap:', testFn);
+                return isConfigObject
+                    ? originalIt.call(this, description, configOrFn, testFn)
+                    : originalIt.call(this, description, testFn);
+            }
+
+            return isConfigObject
+                ? originalIt.call(this, description, configOrFn, wrapTest(testFn, testConfig))
+                : originalIt.call(this, description, wrapTest(testFn, testConfig));
+        };
+    };
+
+    // Apply overrides
     const originalIt = global.it;
-    global.it = function (description, configOrFn, fn) {
-        const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
-        const testFn = isConfigObject ? fn : configOrFn;
-        const testConfig = isConfigObject ? configOrFn : {};
-
-        if (!testFn || typeof testFn !== 'function') {
-            debugLog('cypress-console-spy: testFn is not a function, skipping wrap:', testFn);
-            return isConfigObject
-                ? originalIt.call(this, description, configOrFn, testFn)
-                : originalIt.call(this, description, testFn);
-        }
-
-        const wrappedTest = function () {
-            // Remove existing spies and clear consoleSpies
-            Object.values(consoleSpies).forEach((spy) => {
-                if (spy && typeof spy.restore === 'function') {
-                    spy.restore();
-                    debugLog('Spy restored for console method');
-                }
-            });
-            Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
-
-            return cy.window().then((win) => {
-                // Create new spies
-                config.methodsToTrack.forEach((method) => {
-                    if (win.console[method] && !win.console[method].__cy_spy && !consoleSpies[method]) {
-                        consoleSpies[method] = cy.spy(win.console, method);
-                        debugLog(`Spy created for console.${method}`);
-                    }
-                });
-
-                // Global error handler
-                win.addEventListener('error', (event) => {
-                    const errorMessage = `Uncaught Error: ${event.message} at ${event.filename}:${event.lineno}`;
-                    cy.task('logConsoleError', { message: [errorMessage], type: 'error' }, { log: false });
-                    if (config.logToFile) {
-                        cy.task(
-                            'saveConsoleErrorToFile',
-                            { message: [errorMessage], type: 'error', testPath: Cypress.spec.relative },
-                            { log: false }
-                        );
-                    }
-                    cy.task('notifyCriticalError', { message: [errorMessage], type: 'error' }, { log: false });
-                });
-
-                return testFn.call(this);
-            }).then(() => {
-                return cy.then(() => checkConsoleErrors(testConfig.failOnSpy));
-            }).then(() => {
-                // Clean up spies after test
-                Object.values(consoleSpies).forEach((spy) => {
-                    if (spy && typeof spy.restore === 'function') {
-                        spy.restore();
-                        debugLog('Spy restored after test');
-                    }
-                });
-                Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
-            });
-        };
-
-        return isConfigObject
-            ? originalIt.call(this, description, configOrFn, wrappedTest)
-            : originalIt.call(this, description, wrappedTest);
-    };
-
-    // Handle special cases: it.only
-    global.it.only = function (description, configOrFn, fn) {
-        const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
-        const testFn = isConfigObject ? fn : configOrFn;
-        const testConfig = isConfigObject ? configOrFn : {};
-
-        if (!testFn || typeof testFn !== 'function') {
-            debugLog('cypress-console-spy: testFn is not a function, skipping wrap:', testFn);
-            return isConfigObject
-                ? originalIt.only.call(this, description, configOrFn, testFn)
-                : originalIt.only.call(this, description, testFn);
-        }
-
-        const wrappedTest = function () {
-            // Remove existing spies and clear consoleSpies
-            Object.values(consoleSpies).forEach((spy) => {
-                if (spy && typeof spy.restore === 'function') {
-                    spy.restore();
-                    debugLog('Spy restored for console method');
-                }
-            });
-            Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
-
-            return cy.window().then((win) => {
-                // Create new spies
-                config.methodsToTrack.forEach((method) => {
-                    if (win.console[method] && !win.console[method].__cy_spy && !consoleSpies[method]) {
-                        consoleSpies[method] = cy.spy(win.console, method);
-                        debugLog(`Spy created for console.${method}`);
-                    }
-                });
-
-                // Global error handler
-                win.addEventListener('error', (event) => {
-                    const errorMessage = `Uncaught Error: ${event.message} at ${event.filename}:${event.lineno}`;
-                    cy.task('logConsoleError', { message: [errorMessage], type: 'error' }, { log: false });
-                    if (config.logToFile) {
-                        cy.task(
-                            'saveConsoleErrorToFile',
-                            { message: [errorMessage], type: 'error', testPath: Cypress.spec.relative },
-                            { log: false }
-                        );
-                    }
-                    cy.task('notifyCriticalError', { message: [errorMessage], type: 'error' }, { log: false });
-                });
-
-                return testFn.call(this);
-            }).then(() => {
-                return cy.then(() => checkConsoleErrors(testConfig.failOnSpy));
-            }).then(() => {
-                // Clean up spies after test
-                Object.values(consoleSpies).forEach((spy) => {
-                    if (spy && typeof spy.restore === 'function') {
-                        spy.restore();
-                        debugLog('Spy restored after test');
-                    }
-                });
-                Object.keys(consoleSpies).forEach((key) => delete consoleSpies[key]);
-            });
-        };
-
-        return isConfigObject
-            ? originalIt.only.call(this, description, configOrFn, wrappedTest)
-            : originalIt.only.call(this, description, wrappedTest);
-    };
-
-    // Handle special cases: it.skip
+    global.it = overrideIt(originalIt);
+    global.it.only = overrideIt(originalIt.only, true);
     global.it.skip = function (description, configOrFn, fn) {
         const isConfigObject = typeof configOrFn === 'object' && configOrFn !== null;
         const testFn = isConfigObject ? fn : configOrFn;
-
         return isConfigObject
             ? originalIt.skip.call(this, description, configOrFn, testFn)
             : originalIt.skip.call(this, description, testFn);
     };
+
+    // Set up spies on window load
+    Cypress.on('window:load', (win) => {
+        debugLog('window:load event triggered, setting up console spies');
+        setupConsoleSpy(win);
+    });
 };
