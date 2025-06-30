@@ -11,8 +11,8 @@ module.exports = (Cypress, customConfig = {}) => {
     const config = { ...defaultConfig, ...customConfig };
     const consoleSpies = {};
     const allIssues = [];
-    let currentTestConfig = {}; // Store test-specific config
-    let describeConfig = {}; // Store describe config
+    let currentTestConfig = {};
+    let describeConfig = {};
 
     // Utility to log debug messages if debug mode is enabled
     const debugLog = (...args) => {
@@ -21,12 +21,30 @@ module.exports = (Cypress, customConfig = {}) => {
 
     // Merges configurations from describe and test levels
     const getMergedConfig = (testConfig) => {
-        const merged = { ...defaultConfig, ...describeConfig, ...testConfig };
+        // Ensure consoleDaemon-specific properties are preserved
+        const merged = {
+            ...defaultConfig,
+            ...config, // Include global customConfig
+            ...describeConfig.consoleDaemon,
+            ...testConfig.consoleDaemon,
+            // Explicitly preserve whitelist unless overridden
+            whitelist:
+                (testConfig.consoleDaemon?.whitelist ||
+                    describeConfig.consoleDaemon?.whitelist ||
+                    config.whitelist ||
+                    defaultConfig.whitelist),
+            debug:
+                testConfig.consoleDaemon?.debug ??
+                describeConfig.consoleDaemon?.debug ??
+                config.debug ??
+                defaultConfig.debug,
+        };
         debugLog('Merged config:', {
             default: defaultConfig,
+            custom: config,
             describe: describeConfig,
             test: testConfig,
-            result: merged
+            result: merged,
         });
         return merged;
     };
@@ -68,7 +86,12 @@ module.exports = (Cypress, customConfig = {}) => {
         // Add global error handler
         win.addEventListener('error', (event) => {
             const errorMessage = `Uncaught Error: ${event.message} at ${event.filename}:${event.lineno}`;
-            allIssues.push({ type: 'error', message: [errorMessage] });
+            const rawMessage = event.message; // Store raw error message for whitelist
+            allIssues.push({
+                type: 'error',
+                message: [errorMessage],
+                rawMessage, // Add raw message for whitelist filtering
+            });
             cy.task('logConsoleError', { message: [errorMessage], type: 'error' }, { log: false });
             if (config.logToFile) {
                 cy.task(
@@ -117,13 +140,13 @@ module.exports = (Cypress, customConfig = {}) => {
         debugLog('All collected issues:', allIssues);
 
         // Filter errors and warnings
-        const errors = allIssues.filter((issue) => issue.type === 'error').map((issue) => issue.message);
-        const warnings = allIssues.filter((issue) => issue.type === 'warn').map((issue) => issue.message);
+        const errors = allIssues.filter((issue) => issue.type === 'error').map((issue) => issue);
+        const warnings = allIssues.filter((issue) => issue.type === 'warn').map((issue) => issue);
 
         // Filter out whitelisted messages
         const filteredIssues = [...errors, ...(mergedConfig.throwOnWarning ? warnings : [])].filter(
             (issue) => {
-                const message = issue.join(' ');
+                const message = issue.rawMessage || issue.message.join(' ');
                 return !mergedConfig.whitelist.some((pattern) =>
                     typeof pattern === 'string' ? message.includes(pattern) : pattern.test(message)
                 );
@@ -133,14 +156,14 @@ module.exports = (Cypress, customConfig = {}) => {
 
         // Process logging tasks
         return processIssues(filteredIssues.map((issue) => ({
-            type: errors.includes(issue) ? 'error' : 'warn',
-            message: issue,
+            type: issue.type,
+            message: issue.message,
         }))).then(() => {
             debugLog(`Evaluating failure: filteredIssues.length=${filteredIssues.length}, failOnSpy=${mergedConfig.failOnSpy}`);
             if (filteredIssues.length > 0 && mergedConfig.failOnSpy) {
                 const errorMessage =
                     `Console errors detected (${filteredIssues.length}):\n` +
-                    filteredIssues.map((issue) => `• ${issue.join(' ')}`).join('\n');
+                    filteredIssues.map((issue) => `• ${issue.message.join(' ')}`).join('\n');
                 const consoleError = new Error(errorMessage);
                 consoleError.name = 'ConsoleErrors';
 
@@ -148,7 +171,7 @@ module.exports = (Cypress, customConfig = {}) => {
                     name: 'Console Errors',
                     message: errorMessage,
                     consoleProps: () => ({
-                        'Detected Errors': filteredIssues.map((issue) => issue.join(' ')),
+                        'Detected Errors': filteredIssues.map((issue) => issue.message.join(' ')),
                         Recommendations: 'Check the browser console output',
                     }),
                 });
@@ -174,7 +197,7 @@ module.exports = (Cypress, customConfig = {}) => {
     const wrapTest = (testFn, testConfig) => {
         return function () {
             debugLog('Wrapping test with config:', testConfig);
-            currentTestConfig = testConfig; // Store test config
+            currentTestConfig = testConfig;
             cleanupSpies();
             allIssues.length = 0; // Reset issues at test start
 
