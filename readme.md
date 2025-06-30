@@ -160,6 +160,11 @@ The plugin provides the following Cypress tasks:
 ## Changelog
 
 ### [Latest Version]
+- Fixed issue with whitelist being overwritten by test or suite configurations, ensuring global whitelist from customConfig is preserved unless explicitly overridden in describe, or it blocks.
+- Improved configuration merging in client.js to handle consoleDaemon properties specifically, preventing loss of whitelist and debug settings.
+- Enhanced debug logging to include customConfig details for better troubleshooting.
+
+### [1.1.0]
 - Fixed `failOnSpy: false` not being respected in `it.only` tests.
 - Added support for `describe` block configuration overrides.
 - Eliminated duplicate `checkConsoleErrors` calls for consistent behavior.
