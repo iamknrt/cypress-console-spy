@@ -2,10 +2,25 @@
 
 A Cypress plugin to monitor and handle console errors, warnings, and uncaught errors during tests. It offers configurable options, whitelisting, error statistics, and logging capabilities, with robust support for test-specific and suite-level configuration overrides.
 
+## Table of Contents
+
+- [Installation](#installation)
+- [Setup](#setup)
+- [Core Files](#core-files)
+- [Configuration](#configuration)
+    - [Suite and Test-Specific Configuration](#suite-and-test-specific-configuration)
+- [Features](#features)
+- [Example Test](#example-test)
+- [Debug Logging](#debug-logging)
+- [Tasks](#tasks)
+- [Changelog](#changelog)
+- [Contributing](#contributing)
+- [Issues](#issues)
+- [License](#license)
+
 ## Installation
 
 Install the plugin via npm:
-
 
 ```bash
 npm install @mknrt/cypress-console-spy
@@ -60,7 +75,7 @@ The plugin consists of two main files:
 
 The plugin supports the following options, configurable via `Cypress.env('consoleDaemon')`:
 
-- `failOnSpy` (boolean): Fails the test if console issues are detected (default: `true`). Can be overridden at the suite level with `describe('name', { failOnSpy: false }, () => {...})` or test level with `it('name', { failOnSpy: false }, () => {...})`.
+- `failOnSpy` (boolean): Fails the test if console issues are detected (default: `true`). Can be overridden at the suite level with `describe('name', { consoleDaemon: { failOnSpy: false } }, () => {...})` or test level with `it('name', { consoleDaemon: { failOnSpy: false } }, () => {...})`.
 - `logToFile` (boolean): Saves console issues to `[testName].log` in the `cypress/logs/` directory (default: `true`).
 - `methodsToTrack` (array): Console methods to monitor (e.g., `['error', 'warn', 'log']`, default: `['error']`).
 - `throwOnWarning` (boolean): Treats warnings as critical, failing the test if `failOnSpy` is `true` (default: `false`).
@@ -69,11 +84,11 @@ The plugin supports the following options, configurable via `Cypress.env('consol
 
 ### Suite and Test-Specific Configuration
 
-You can override `failOnSpy` for entire test suites or individual tests:
+You can override `failOnSpy` for entire test suites or individual tests using the `consoleDaemon` object:
 
 ```javascript
-describe('Suite with ignored console errors', { failOnSpy: false }, () => {
-    it('Test ignoring console errors', { failOnSpy: false }, () => {
+describe('Suite with ignored console errors', { consoleDaemon: { failOnSpy: false } }, () => {
+    it('Test ignoring console errors', { consoleDaemon: { failOnSpy: false } }, () => {
         cy.visit('https://example.com');
         cy.window().then((win) => {
             win.console.error('Test error'); // Won't fail the test
@@ -96,14 +111,14 @@ describe('Suite with ignored console errors', { failOnSpy: false }, () => {
 Here’s an example demonstrating console monitoring, whitelisting, and debug mode:
 
 ```javascript
-describe('Test Suite with Console Spy', { failOnSpy: false }, () => {
-    it('Ignores console errors', { failOnSpy: false }, () => {
+describe('Test Suite with Console Spy', { consoleDaemon: { failOnSpy: false } }, () => {
+    it.only('Проверить чекбокс "Атрибут является хранимым"', { tags: ['@constructor', '@arm', '@arm-forms', '@regress'], consoleDaemon: { failOnSpy: false } }, () => {
         // Enable debug mode for this test
         cy.task('setDebugMode', true);
 
         cy.visit('https://example.com');
         cy.window().then((win) => {
-            win.console.error('Test error'); // Won't fail due to failOnSpy: false
+            win.console.error('Test error'); // Won't fail due to consoleDaemon: { failOnSpy: false }
             win.console.warn('known warning'); // Ignored due to whitelist
             throw new Error('Uncaught test error'); // Captured and logged
         });
@@ -116,7 +131,7 @@ describe('Test Suite with Console Spy', { failOnSpy: false }, () => {
 });
 ```
 
-**Expected Behavior**:
+**[Expected Behavior]**:
 - `Test error` is logged but doesn’t fail the test.
 - `known warning` is ignored due to the whitelist.
 - `Uncaught test error` is captured, logged, and saved to a file (if `logToFile: true`).
@@ -133,8 +148,8 @@ To troubleshoot issues, set `debug: true` in the plugin configuration or via `cy
 
 **Example Debug Log**:
 ```
-Overriding describe with config: { failOnSpy: false }
-Overriding it.only with config: { failOnSpy: false }
+Overriding describe with config: { consoleDaemon: { failOnSpy: false } }
+Overriding it.only with config: { consoleDaemon: { failOnSpy: false } }
 Merged config: { default: { failOnSpy: true, ... }, describe: { failOnSpy: false }, test: { failOnSpy: false }, result: { failOnSpy: false, ... } }
 Spy created for console.error
 Collected 1 calls for error
@@ -159,10 +174,14 @@ The plugin provides the following Cypress tasks:
 
 ## Changelog
 
-### [Latest Version]
+### [Latest Version = 1.1.2] 
+- Updated readme.md
+
+### [1.1.1] 
 - Fixed issue with whitelist being overwritten by test or suite configurations, ensuring global whitelist from customConfig is preserved unless explicitly overridden in describe, or it blocks.
 - Improved configuration merging in client.js to handle consoleDaemon properties specifically, preventing loss of whitelist and debug settings.
 - Enhanced debug logging to include customConfig details for better troubleshooting.
+- Updated `failOnSpy` configuration to use `consoleDaemon: { failOnSpy: false }` for test and suite overrides.
 
 ### [1.1.0]
 - Fixed `failOnSpy: false` not being respected in `it.only` tests.
