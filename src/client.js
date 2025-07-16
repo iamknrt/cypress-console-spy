@@ -86,21 +86,14 @@ module.exports = (Cypress, customConfig = {}) => {
         // Add global error handler
         win.addEventListener('error', (event) => {
             const errorMessage = `Uncaught Error: ${event.message} at ${event.filename}:${event.lineno}`;
-            const rawMessage = event.message; // Store raw error message for whitelist
+            const rawMessage = event.message;
             allIssues.push({
                 type: 'error',
                 message: [errorMessage],
-                rawMessage, // Add raw message for whitelist filtering
+                rawMessage,
             });
-            cy.task('logConsoleError', { message: [errorMessage], type: 'error' }, { log: false });
-            if (config.logToFile) {
-                cy.task(
-                    'saveConsoleErrorToFile',
-                    { message: [errorMessage], type: 'error', testPath: Cypress.spec.relative },
-                    { log: false }
-                );
-            }
-            cy.task('notifyCriticalError', { message: [errorMessage], type: 'error' }, { log: false });
+            debugLog(`Captured uncaught error: ${errorMessage}`);
+            // Не вызываем cy.task здесь, а сохраняем ошибку для последующей обработки
         });
     };
 

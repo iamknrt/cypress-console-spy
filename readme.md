@@ -174,7 +174,12 @@ The plugin provides the following Cypress tasks:
 
 ## Changelog
 
-### [Latest Version = 1.1.2] 
+
+### [Latest Version = 1.1.3]
+- Updated `setupConsoleSpy` in `client.js`: Removed direct `cy.task` calls from the `window.onerror` handler. Errors are now only added to the `allIssues` array for later processing, ensuring compatibility with Cypress command chain.
+- Maintained error handling in `checkConsoleErrors`: Ensured that `checkConsoleErrors` correctly processes all errors, including `ResizeObserver` errors, via the `processIssues` function, preserving existing functionality.
+
+### [1.1.2] 
 - Updated readme.md
 
 ### [1.1.1] 
