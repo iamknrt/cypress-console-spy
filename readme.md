@@ -175,7 +175,30 @@ The plugin provides the following Cypress tasks:
 ## Changelog
 
 
-### [Latest Version = 1.1.3]
+### [Latest Version = 1.2.1]
+- **Simplified Config Format**: Configuration now uses ONLY the `consoleDaemon` key for consistency. Use `{ consoleDaemon: { failOnSpy: false } }` format in `describe` and `it` blocks.
+
+### [1.2.0]
+- **TypeScript Support**: Added full TypeScript type definitions (`index.d.ts`) for better IDE support and type safety.
+- **Performance Optimization**: Replaced multiple `cy.task` calls with a single batch call (`processConsoleBatch`), significantly improving performance when multiple errors are detected.
+- **Async File Operations**: Replaced synchronous file writes with asynchronous operations in server.js to prevent blocking the Node.js event loop.
+- **Fixed Multiple Error Listeners**: Added `WeakSet` tracking to prevent duplicate error event listeners on window objects during page navigation.
+- **Improved Message Handling**: Added `messageToString` utility function to safely convert any message type (arrays, objects, primitives) to strings, preventing `.join()` errors.
+- **Better Type Detection**: Improved `collectSpyCalls` to correctly categorize `error`, `warn`, and `info` console methods instead of treating all non-errors as warnings.
+- **Removed Hardcoded Path**: Removed the hardcoded `sample.cy.js` path check from `processIssues`.
+- **Configurable Log Directory**: Added support for custom log directory via `config.env.consoleDaemon.logDir`.
+- **Optimized Directory Creation**: Log directory is now created once during `before:run` instead of checking on every file write.
+- **Improved Debug Logging**: Added consistent `[cypress-console-spy]` prefix to all debug and error messages.
+- **Backward Compatibility**: Legacy task functions (`logConsoleError`, `saveConsoleErrorToFile`, `notifyCriticalError`) are preserved for backward compatibility.
+
+### [1.1.4]
+- **CRITICAL BUG FIX**: Fixed issue where tests were not failing when console errors were detected. The promise chain in `wrapTest` was incorrectly structured, causing errors thrown by `checkConsoleErrors` to not propagate properly.
+- Improved spy data collection: Now explicitly collects spy calls before checking errors in `wrapTest`, ensuring all console errors are captured.
+- Fixed `setupConsoleSpy` to collect data from existing spies before cleaning them up, preventing data loss during page navigation.
+- Added try-catch blocks around spy operations to prevent crashes when spies fail to restore or create.
+- Removed redundant spy collection call from `checkConsoleErrors` (now handled in `wrapTest`).
+
+### [1.1.3]
 - Updated `setupConsoleSpy` in `client.js`: Removed direct `cy.task` calls from the `window.onerror` handler. Errors are now only added to the `allIssues` array for later processing, ensuring compatibility with Cypress command chain.
 - Maintained error handling in `checkConsoleErrors`: Ensured that `checkConsoleErrors` correctly processes all errors, including `ResizeObserver` errors, via the `processIssues` function, preserving existing functionality.
 
