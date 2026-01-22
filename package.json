@@ -1,6 +1,6 @@
 {
   "name": "@mknrt/cypress-console-spy",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "Cypress plugin to monitor and handle console errors and warnings",
   "main": "index.js",
   "types": "index.d.ts",
