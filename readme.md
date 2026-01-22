@@ -175,7 +175,17 @@ The plugin provides the following Cypress tasks:
 ## Changelog
 
 
-### [Latest Version = 1.2.1]
+### [Latest Version = 1.2.3]
+- **Fixed Error Object Serialization**: Error objects (like `AbortError`) are now properly converted to readable strings instead of `{}`.
+- **Fixed Whitelist Merging**: Whitelists from global config, describe, and it levels are now merged together instead of overriding. This ensures global whitelist from `cypress.config.js` is always applied.
+- **Improved Error Display**: Console errors now show the actual error message (e.g., "AbortError: The user aborted a request.") instead of `{}`.
+- **Better rawMessage Extraction**: Added proper extraction of error messages from Error objects and error-like objects for whitelist matching.
+- **Enhanced Debug Logging**: Added more detailed debug logs for whitelist matching to help troubleshoot filtering issues.
+
+### [1.2.2]
+- Patch version for npm publish testing.
+
+### [1.2.1]
 - **Simplified Config Format**: Configuration now uses ONLY the `consoleDaemon` key for consistency. Use `{ consoleDaemon: { failOnSpy: false } }` format in `describe` and `it` blocks.
 
 ### [1.2.0]

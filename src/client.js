@@ -9,19 +9,52 @@ const defaultConfig = {
 
 /**
  * Safely converts message to string
- * @param {*} message - Message to convert (can be array, string, object, etc.)
+ * Handles Error objects, arrays, and other types properly
+ * @param {*} message - Message to convert (can be array, string, object, Error, etc.)
  * @returns {string} - String representation of the message
  */
 const messageToString = (message) => {
-    if (message === null || message === undefined) {
-        return String(message);
+    if (message === null) {
+        return 'null';
     }
+    if (message === undefined) {
+        return 'undefined';
+    }
+    // Handle Error objects specially - JSON.stringify returns {} for Error
+    if (message instanceof Error) {
+        // Include name, message, and optionally stack
+        const errorParts = [];
+        if (message.name && message.name !== 'Error') {
+            errorParts.push(message.name + ':');
+        }
+        if (message.message) {
+            errorParts.push(message.message);
+        }
+        return errorParts.length > 0 ? errorParts.join(' ') : String(message);
+    }
+    // Handle arrays - recursively convert each item
     if (Array.isArray(message)) {
         return message.map((item) => messageToString(item)).join(' ');
     }
+    // Handle objects
     if (typeof message === 'object') {
+        // Check if object has a message property (common for error-like objects)
+        if (message.message && typeof message.message === 'string') {
+            const prefix = message.name ? `${message.name}: ` : '';
+            return prefix + message.message;
+        }
+        // Try to stringify, but handle circular references
         try {
-            return JSON.stringify(message);
+            const str = JSON.stringify(message);
+            // If it's just an empty object, try toString
+            if (str === '{}' || str === '[]') {
+                const toStr = String(message);
+                // If toString gives something useful, use it
+                if (toStr !== '[object Object]' && toStr !== '') {
+                    return toStr;
+                }
+            }
+            return str;
         } catch {
             return String(message);
         }
@@ -50,17 +83,21 @@ module.exports = (Cypress, customConfig = {}) => {
         const describeConsoleDaemon = describeConfigForTest?.consoleDaemon || {};
         const testConsoleDaemon = testConfig?.consoleDaemon || {};
 
+        // Merge whitelists from all levels (not override)
+        // This allows adding to the global whitelist at describe/test level
+        const mergedWhitelist = [
+            ...(config.whitelist || []),
+            ...(describeConsoleDaemon.whitelist || []),
+            ...(testConsoleDaemon.whitelist || []),
+        ];
+
         const merged = {
             ...defaultConfig,
             ...config, // Global customConfig from Cypress.env('consoleDaemon')
             ...describeConsoleDaemon,
             ...testConsoleDaemon,
-            // Explicitly preserve whitelist unless overridden
-            whitelist:
-                testConsoleDaemon.whitelist ||
-                describeConsoleDaemon.whitelist ||
-                config.whitelist ||
-                defaultConfig.whitelist,
+            // Whitelist is merged from all levels, not overridden
+            whitelist: mergedWhitelist,
             debug:
                 testConsoleDaemon.debug ??
                 describeConsoleDaemon.debug ??
@@ -88,10 +125,31 @@ module.exports = (Cypress, customConfig = {}) => {
     const collectSpyCalls = (method, spy) => {
         if (!spy?.getCalls) return;
         const calls = spy.getCalls();
-        const newIssues = calls.map((call) => ({
-            type: getIssueType(method),
-            message: call.args,
-        }));
+        const newIssues = calls.map((call) => {
+            // Extract raw message for whitelist matching
+            // Try to get the most meaningful string representation
+            const args = call.args;
+            let rawMessage = '';
+            
+            // Build rawMessage from all arguments
+            for (const arg of args) {
+                if (arg instanceof Error) {
+                    rawMessage += (arg.name ? arg.name + ': ' : '') + (arg.message || '') + ' ';
+                } else if (typeof arg === 'string') {
+                    rawMessage += arg + ' ';
+                } else if (arg && typeof arg === 'object' && arg.message) {
+                    rawMessage += (arg.name ? arg.name + ': ' : '') + arg.message + ' ';
+                } else if (arg !== null && arg !== undefined) {
+                    rawMessage += messageToString(arg) + ' ';
+                }
+            }
+            
+            return {
+                type: getIssueType(method),
+                message: args,
+                rawMessage: rawMessage.trim(),
+            };
+        });
         allIssues.push(...newIssues);
         debugLog(`Collected ${calls.length} calls for ${method}`);
     };
@@ -158,10 +216,11 @@ module.exports = (Cypress, customConfig = {}) => {
         debugLog('Processing issues batch:', issues);
 
         // Batch all issues into a single task call for better performance
+        // Use rawMessage if available for better readability
         return cy.task('processConsoleBatch', {
             issues: issues.map((issue) => ({
                 type: issue.type,
-                message: messageToString(issue.message),
+                message: issue.rawMessage || messageToString(issue.message),
             })),
             testPath,
             logToFile: config.logToFile,
@@ -172,6 +231,7 @@ module.exports = (Cypress, customConfig = {}) => {
     const checkConsoleErrors = (describeConfigForTest = {}) => {
         const mergedConfig = getMergedConfig(currentTestConfig, describeConfigForTest);
         debugLog('Checking console errors with merged config:', mergedConfig);
+        debugLog('Whitelist patterns:', mergedConfig.whitelist);
         debugLog('All collected issues:', allIssues);
 
         // Filter errors and warnings
@@ -181,21 +241,35 @@ module.exports = (Cypress, customConfig = {}) => {
         // Filter out whitelisted messages
         const filteredIssues = [...errors, ...(mergedConfig.throwOnWarning ? warnings : [])].filter(
             (issue) => {
+                // Use rawMessage if available (better for whitelist matching), otherwise convert
                 const message = issue.rawMessage || messageToString(issue.message);
-                return !mergedConfig.whitelist.some((pattern) =>
-                    typeof pattern === 'string' ? message.includes(pattern) : pattern.test(message)
-                );
+                debugLog(`Checking message against whitelist: "${message}"`);
+                
+                const isWhitelisted = mergedConfig.whitelist.some((pattern) => {
+                    const matches = typeof pattern === 'string' 
+                        ? message.includes(pattern) 
+                        : pattern.test(message);
+                    if (matches) {
+                        debugLog(`Message matched whitelist pattern: ${pattern}`);
+                    }
+                    return matches;
+                });
+                
+                return !isWhitelisted;
             }
         );
-        debugLog('Filtered issues:', filteredIssues);
+        debugLog('Filtered issues (after whitelist):', filteredIssues);
 
         // Process logging tasks
         return processIssues(filteredIssues).then(() => {
             debugLog(`Evaluating failure: filteredIssues.length=${filteredIssues.length}, failOnSpy=${mergedConfig.failOnSpy}`);
             if (filteredIssues.length > 0 && mergedConfig.failOnSpy) {
+                // Use rawMessage for display if available
+                const formatIssue = (issue) => issue.rawMessage || messageToString(issue.message);
+                
                 const errorMessage =
                     `Console errors detected (${filteredIssues.length}):\n` +
-                    filteredIssues.map((issue) => `• ${messageToString(issue.message)}`).join('\n');
+                    filteredIssues.map((issue) => `• ${formatIssue(issue)}`).join('\n');
                 const consoleError = new Error(errorMessage);
                 consoleError.name = 'ConsoleErrors';
 
@@ -203,8 +277,9 @@ module.exports = (Cypress, customConfig = {}) => {
                     name: 'Console Errors',
                     message: errorMessage,
                     consoleProps: () => ({
-                        'Detected Errors': filteredIssues.map((issue) => messageToString(issue.message)),
-                        Recommendations: 'Check the browser console output',
+                        'Detected Errors': filteredIssues.map((issue) => formatIssue(issue)),
+                        'Whitelist': mergedConfig.whitelist,
+                        Recommendations: 'Check the browser console output or add to whitelist',
                     }),
                 });
 
