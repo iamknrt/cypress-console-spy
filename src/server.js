@@ -8,7 +8,7 @@ module.exports = (on, config) => {
     
     // Get log directory from config or use default
     const getLogDir = () => {
-        const customLogDir = config?.env?.consoleDaemon?.logDir;
+        const customLogDir = config?.expose?.consoleDaemon?.logDir || config?.env?.consoleDaemon?.logDir;
         return customLogDir || path.join(process.cwd(), 'cypress', 'logs');
     };
 
