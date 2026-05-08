@@ -69,9 +69,11 @@ declare module '@mknrt/cypress-console-spy' {
         errors: number;
         /** Number of warnings detected */
         warnings: number;
+        /** Number of info-level issues detected (log/info/debug) */
+        info: number;
         /** Detailed list of all issues */
         details: Array<{
-            type: string;
+            type: 'error' | 'warn' | 'info';
             message: string;
         }>;
     }
@@ -95,7 +97,7 @@ declare module '@mknrt/cypress-console-spy' {
      * ```javascript
      * // cypress/support/e2e.js
      * const { client } = require('@mknrt/cypress-console-spy');
-     * client(Cypress, Cypress.env('consoleDaemon'));
+     * client(Cypress, Cypress.expose('consoleDaemon'));
      * ```
      */
     export function client(
@@ -153,7 +155,8 @@ declare namespace Cypress {
         task(event: 'getErrorStats'): Chainable<{
             errors: number;
             warnings: number;
-            details: Array<{ type: string; message: string }>;
+            info: number;
+            details: Array<{ type: 'error' | 'warn' | 'info'; message: string }>;
         }>;
 
         /**
@@ -171,7 +174,7 @@ declare namespace Cypress {
          */
         task(
             event: 'logConsoleError',
-            arg: { message: unknown; type: string },
+            arg: { message: unknown; type: 'error' | 'warn' | 'info' },
             options?: Partial<Loggable & Timeoutable>
         ): Chainable<null>;
 
@@ -180,7 +183,7 @@ declare namespace Cypress {
          */
         task(
             event: 'saveConsoleErrorToFile',
-            arg: { message: unknown; type: string; testPath: string },
+            arg: { message: unknown; type: 'error' | 'warn' | 'info'; testPath: string },
             options?: Partial<Loggable & Timeoutable>
         ): Chainable<null>;
 
@@ -189,7 +192,7 @@ declare namespace Cypress {
          */
         task(
             event: 'notifyCriticalError',
-            arg: { message: unknown; type: string },
+            arg: { message: unknown; type: 'error' | 'warn' | 'info' },
             options?: Partial<Loggable & Timeoutable>
         ): Chainable<null>;
     }
